@@ -1,0 +1,18 @@
+{
+  "addons": {
+    "unify@jsg.local": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://github.com/JiangShuguo/zotero-unify/releases/download/v1.0.0/unify.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999",
+              "strict_max_version": "10.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

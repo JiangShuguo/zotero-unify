@@ -1,0 +1,20 @@
+# Ethereal Style 期刊标签参考配置
+#
+# 在 Ethereal Style 的期刊标签设置面板中填写下列项。
+# Journal Aliases 请另见 JOURNAL_ALIASES.txt（逐行粘贴）。
+
+## Source
+easyscholar
+
+## Fields
+ccf, sciif, sci, sciUp, sciBase, eii
+
+## Map
+北大中文核心=北核, SCIIF=IF, SCIIF(5)=IF(5), SCI基础版=中科院, SCI升级版=中科院, CCF=CCF, EI检索=EI
+
+## Sort By
+ccf, sci, -sciif
+
+## Journal Aliases
+见同目录 JOURNAL_ALIASES.txt
+（每行一组 A = B；不会改变 Zotero 条目上的期刊/会议名字段，仅影响 Style 查询时的映射。）
