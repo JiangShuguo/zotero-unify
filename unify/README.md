@@ -1,4 +1,4 @@
-# Unify（归一）
+# Unify
 
 详见仓库根目录 [README.md](../README.md)。
 

@@ -1,4 +1,4 @@
-# Zotero Unify（归一）
+# Zotero Unify
 
 与 [Ethereal Style](https://github.com/MuiseDestiny/zotero-style) 配合使用的 Zotero 插件：规范期刊/会议名称，并辅助识别 USENIX 论文会场元数据，以便 Style 正确显示 CCF 等标签。
 
