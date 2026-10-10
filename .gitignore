@@ -1,22 +1,18 @@
-# Build outputs
+﻿# Build outputs
 unify/build/
 **/__pycache__/
 *.pyc
 *.pyo
 
 # Local / debug
-unify/force-fix.js
 *.log
 .DS_Store
 Thumbs.db
 Desktop.ini
 
-# Sample PDFs (copyrighted; do not publish)
+# Sample PDFs / scratch (do not publish)
 sample-pdfs/
-
-# Leftover / empty stubs
-zotero-venue-normalizer/
-/tools/
+tem/
 
 # Editor
 .idea/

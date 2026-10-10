@@ -1,7 +1,14 @@
-# Unify
+# Unify (plugin package)
 
-详见仓库根目录 [README.md](../README.md)。
+Source and packaging for the Zotero Unify add-on live in this folder.
 
-- ID：`unify@jsg.local`
-- 版本：1.0.0
-- 构建：`python tools/inspect_and_build.py`
+Full documentation (install, Style setup, build):
+
+- English: [../README.md](../README.md)
+- 中文: [../README.zh-CN.md](../README.zh-CN.md)
+
+Build XPI:
+
+```bash
+python tools/inspect_and_build.py
+```

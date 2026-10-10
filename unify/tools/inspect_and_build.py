@@ -69,7 +69,27 @@ def validate_utf8(path: Path):
         raise SystemExit(f"Non-UTF8 file: {path}: {e}")
 
 
+def sync_journal_aliases():
+    """One identity line per canonical venue name from venue-map.js."""
+    import re
+
+    src = (ROOT / "src" / "venue-map.js").read_text(encoding="utf-8")
+    names = re.findall(r'^\s*name:\s*"([^"]+)"', src, flags=re.M)
+    seen = set()
+    lines = []
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        lines.append(f"{name} = {name}")
+    text = "\n".join(lines) + "\n"
+    path = ROOT / "JOURNAL_ALIASES.txt"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def build():
+    sync_journal_aliases()
     manifest = make_manifest()
     files = {
         "manifest.json": json.dumps(manifest, indent=2, ensure_ascii=True).encode(

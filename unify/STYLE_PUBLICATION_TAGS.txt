@@ -17,4 +17,4 @@ ccf, sci, -sciif
 
 ## Journal Aliases
 见同目录 JOURNAL_ALIASES.txt
-（每行一组 A = B；不会改变 Zotero 条目上的期刊/会议名字段，仅影响 Style 查询时的映射。）
+（每个会场一行「规范名 = 规范名」。多样导入写法由 Unify 正则归一，Style 只认规范名。）

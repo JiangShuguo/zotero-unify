@@ -35,9 +35,8 @@ var UnifyNormalizer = {
       );
     }
     if (venue.kind === "journal" && item.itemType === "journalArticle") {
-      const cur = item.getField("publicationTitle") || "";
-      // Only shorten an existing long publicationTitle; never invent one
-      return cur && cur !== name;
+      const cur = (item.getField("publicationTitle") || "").trim();
+      return cur !== name;
     }
     return false;
   },
@@ -76,8 +75,9 @@ var UnifyNormalizer = {
         dirty = true;
       }
     } else if (venue.kind === "journal" && item.itemType === "journalArticle") {
-      const cur = item.getField("publicationTitle") || "";
-      if (cur && cur !== name) {
+      const cur = (item.getField("publicationTitle") || "").trim();
+      // Shorten long names, or fill empty when DOI/URL already identifies the journal
+      if (cur !== name) {
         item.setField("publicationTitle", name);
         dirty = true;
       }

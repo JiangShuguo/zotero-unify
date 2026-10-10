@@ -8,6 +8,8 @@ var Unify = {
   _processing: false,
   _addedElementIDs: [],
   _interval: null,
+  /** attachment.id → field snapshot taken before detach/erase */
+  _recognizeSnapshots: new Map(),
 
   init({ id, version, rootURI }) {
     this.id = id;
@@ -184,6 +186,84 @@ var Unify = {
     return docs;
   },
 
+  _snapshotItemFields(item) {
+    if (!item || !item.isRegularItem || !item.isRegularItem()) return null;
+    return {
+      itemType: item.itemType,
+      title: item.getField("title") || "",
+      DOI: item.getField("DOI") || "",
+      url: item.getField("url") || "",
+      date: item.getField("date") || "",
+      publicationTitle: item.getField("publicationTitle") || "",
+      conferenceName: item.getField("conferenceName") || "",
+      proceedingsTitle: item.getField("proceedingsTitle") || "",
+      volume: item.getField("volume") || "",
+      pages: item.getField("pages") || "",
+    };
+  },
+
+  async _restoreSnapshotIfSparse(item, snap) {
+    if (!item || !snap) return false;
+    const hasVenue = !!(
+      (item.getField("publicationTitle") || "").trim() ||
+      (item.getField("conferenceName") || "").trim() ||
+      (item.getField("proceedingsTitle") || "").trim()
+    );
+    // Recognize already filled a venue — keep Zotero's result
+    if (hasVenue) return false;
+
+    let dirty = false;
+    if (
+      snap.itemType &&
+      item.itemType !== snap.itemType &&
+      !hasVenue
+    ) {
+      try {
+        item.setType(Zotero.ItemTypes.getID(snap.itemType));
+        dirty = true;
+      } catch (e) {}
+    }
+    const fields = [
+      "DOI",
+      "url",
+      "date",
+      "publicationTitle",
+      "conferenceName",
+      "proceedingsTitle",
+      "volume",
+      "pages",
+    ];
+    for (const f of fields) {
+      const cur = (item.getField(f) || "").trim();
+      const prev = (snap[f] || "").trim();
+      if (!cur && prev) {
+        item.setField(f, prev);
+        dirty = true;
+      }
+    }
+    // Fix OCR-mangled title only when recognize left a clearly worse one
+    const curTitle = (item.getField("title") || "").trim();
+    const prevTitle = (snap.title || "").trim();
+    if (
+      prevTitle &&
+      curTitle &&
+      /1pv6/i.test(curTitle) &&
+      /ipv6/i.test(prevTitle) &&
+      !/1pv6/i.test(prevTitle)
+    ) {
+      item.setField("title", prevTitle);
+      dirty = true;
+    }
+    if (!dirty) return false;
+    try {
+      await item.saveTx();
+      return true;
+    } catch (e) {
+      await this.fileLog("restore snapshot: " + e);
+      return false;
+    }
+  },
+
   async _detachForRerecognition(parent, attachment) {
     if (!parent || !attachment) return null;
     if (attachment.isTopLevelItem()) return attachment;
@@ -203,6 +283,7 @@ var Unify = {
       return null;
     }
 
+    const snap = this._snapshotItemFields(parent);
     const collections = parent.getCollections();
     await Zotero.DB.executeTransaction(async () => {
       attachment.parentItemID = null;
@@ -212,7 +293,9 @@ var Unify = {
       await attachment.save();
       await parent.erase();
     });
-    return Zotero.Items.get(attachment.id);
+    const att = Zotero.Items.get(attachment.id);
+    if (att && snap) this._recognizeSnapshots.set(att.id, snap);
+    return att;
   },
 
   async runUnifyOnSelected(window) {
@@ -257,16 +340,23 @@ var Unify = {
           for (const doc of docs) {
             const fresh = Zotero.Items.get(doc.id);
             if (!fresh) continue;
-            const parent = fresh.parentItem;
-            if (parent) recognizedParents.push(parent);
-            else if (fresh.isRegularItem && fresh.isRegularItem()) {
-              recognizedParents.push(fresh);
+            let parent = fresh.parentItem;
+            if (!parent && fresh.isRegularItem && fresh.isRegularItem()) {
+              parent = fresh;
             }
+            if (!parent) continue;
+            const snap = this._recognizeSnapshots.get(doc.id);
+            if (snap) {
+              await this._restoreSnapshotIfSparse(parent, snap);
+              this._recognizeSnapshots.delete(doc.id);
+            }
+            recognizedParents.push(parent);
           }
         }
       } else {
         await this.fileLog("RecognizeDocument API missing");
       }
+      this._recognizeSnapshots.clear();
 
       // Also normalize any still-selected regular items (and new parents)
       const toNormalize = new Map();
@@ -301,7 +391,7 @@ var Unify = {
       } catch (e) {}
 
       progress.changeHeadline("Unify");
-      progress.addDescription("Recognized " + recognizedParents.length);
+      progress.addDescription("Finished " + recognizedParents.length);
       progress.startCloseTimer(2500);
     } catch (e) {
       await this.fileLog("runUnifyOnSelected: " + e + "\n" + (e && e.stack));
