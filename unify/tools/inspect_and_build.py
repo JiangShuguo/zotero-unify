@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "build" / "unify.xpi"
 ADDON_ID = "unify@jsg.local"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 HOMEPAGE = "https://github.com/JiangShuguo/zotero-unify"
 UPDATE_URL = (
     "https://raw.githubusercontent.com/JiangShuguo/zotero-unify/main/unify/updates.json"

@@ -36,7 +36,7 @@ var Unify = {
   },
 
   async main() {
-    await this.fileLog("startup v" + this.version + " (venue-fields only)");
+    await this.fileLog("startup v" + this.version + " (venue-fields + manual re-recognize)");
 
     this.notifierID = Zotero.Notifier.registerObserver(
       {
@@ -50,11 +50,9 @@ var Unify = {
       this.onMainWindowLoad(win);
     }
 
-    // A few delayed scans after startup (imports settle slowly)
-    setTimeout(() => this.scanAll(false, "t+3s"), 3000);
-    setTimeout(() => this.scanAll(false, "t+10s"), 10000);
-    // Light periodic scan (no orphan-PDF parent creation)
-    this._interval = setInterval(() => this.scanAll(false, "interval"), 20000);
+    // No library-wide auto scan: rewriting existing items fights manual edits
+    // (e.g. clearing conferenceName / proceedingsTitle). New imports are
+    // handled via the "add" notifier; retries use the Unify context menu.
   },
 
   async scanAll(showPopup, label) {
@@ -95,43 +93,223 @@ var Unify = {
 
   _injectMenu(window) {
     const doc = window.document;
-    if (doc.getElementById("unify-normalize-selected")) return;
-    const mk = (id, label, fn) => {
-      const el = doc.createXULElement
-        ? doc.createXULElement("menuitem")
-        : doc.createElement("menuitem");
-      el.id = id;
-      el.setAttribute("label", label);
-      el.addEventListener("command", fn);
-      return el;
-    };
-    const a = mk("unify-normalize-selected", "Unify: normalize selected venues", () =>
-      this.normalizeSelected(window)
-    );
-    const b = mk("unify-normalize-library", "Unify: scan library venues", () =>
-      this.scanAll(true, "manual")
-    );
+    // Remove legacy / previous menu entries
+    for (const legacy of [
+      "unify-normalize-selected",
+      "unify-normalize-library",
+      "unify-menu-item",
+    ]) {
+      const old = doc.getElementById(legacy);
+      if (old) old.remove();
+    }
+
+    const el = doc.createXULElement
+      ? doc.createXULElement("menuitem")
+      : doc.createElement("menuitem");
+    el.id = "unify-menu-item";
+    el.setAttribute("label", "Unify");
+    el.setAttribute("class", "menuitem-iconic");
+    const iconURL = this.rootURI + "icon.png";
+    el.setAttribute("image", iconURL);
+    try {
+      el.style.listStyleImage = 'url("' + iconURL + '")';
+    } catch (e) {}
+    el.addEventListener("command", () => this.runUnifyOnSelected(window));
+
     const target =
       doc.getElementById("zotero-itemmenu") || doc.getElementById("menu_ToolsPopup");
     if (!target) return;
-    target.appendChild(a);
-    target.appendChild(b);
-    this._addedElementIDs.push(a.id, b.id);
+    target.appendChild(el);
+    this._addedElementIDs.push(el.id);
   },
 
-  async normalizeSelected(window) {
+  _isRecognizableAttachment(item) {
+    if (!item || !item.isAttachment || !item.isAttachment()) return false;
+    try {
+      if (typeof item.isPDFAttachment === "function" && item.isPDFAttachment()) {
+        return true;
+      }
+      if (typeof item.isEPUBAttachment === "function" && item.isEPUBAttachment()) {
+        return true;
+      }
+    } catch (e) {}
+    const ct = (item.attachmentContentType || "").toLowerCase();
+    return ct === "application/pdf" || ct === "application/epub+zip";
+  },
+
+  /**
+   * Zotero.RecognizeDocument only accepts top-level PDF/EPUB attachments.
+   * For parent items, detach the sole PDF (same idea as Undo Retrieve Metadata)
+   * so native recognition can run again, then normalize venues.
+   */
+  async _prepareAttachmentsForRecognize(selected) {
+    const docs = [];
+    const seen = new Set();
+
+    for (const item of selected) {
+      if (!item) continue;
+
+      if (this._isRecognizableAttachment(item)) {
+        if (item.isTopLevelItem()) {
+          if (!seen.has(item.id)) {
+            seen.add(item.id);
+            docs.push(item);
+          }
+        } else {
+          const parent = item.parentItem;
+          if (parent) {
+            const att = await this._detachForRerecognition(parent, item);
+            if (att && !seen.has(att.id)) {
+              seen.add(att.id);
+              docs.push(att);
+            }
+          }
+        }
+        continue;
+      }
+
+      if (item.isRegularItem && item.isRegularItem()) {
+        const atts = Zotero.Items.get(item.getAttachments()).filter((a) =>
+          this._isRecognizableAttachment(a)
+        );
+        if (!atts.length) continue;
+        // Prefer the first PDF/EPUB; detach parent so recognize can recreate metadata
+        const att = await this._detachForRerecognition(item, atts[0]);
+        if (att && !seen.has(att.id)) {
+          seen.add(att.id);
+          docs.push(att);
+        }
+      }
+    }
+    return docs;
+  },
+
+  async _detachForRerecognition(parent, attachment) {
+    if (!parent || !attachment) return null;
+    if (attachment.isTopLevelItem()) return attachment;
+
+    // Only safe when this PDF/EPUB is the sole child (same as Undo Retrieve Metadata).
+    // Otherwise skip re-recognize and leave venue normalize to handle the parent.
+    const attachIDs = parent.getAttachments() || [];
+    const noteIDs = parent.getNotes ? parent.getNotes() : [];
+    const onlyThisFile =
+      attachIDs.length === 1 &&
+      attachIDs[0] === attachment.id &&
+      (!noteIDs || noteIDs.length === 0);
+    if (!onlyThisFile) {
+      await this.fileLog(
+        "skip re-recognize for item " + parent.key + " (has notes or other children)"
+      );
+      return null;
+    }
+
+    const collections = parent.getCollections();
+    await Zotero.DB.executeTransaction(async () => {
+      attachment.parentItemID = null;
+      if (collections && collections.length) {
+        attachment.setCollections(collections);
+      }
+      await attachment.save();
+      await parent.erase();
+    });
+    return Zotero.Items.get(attachment.id);
+  },
+
+  async runUnifyOnSelected(window) {
+    if (this._processing) {
+      await this.fileLog("Unify busy; ignore click");
+      return;
+    }
+    this._processing = true;
+    const progress = new Zotero.ProgressWindow({ closeOnClick: true });
+    progress.changeHeadline("Unify");
+    progress.addDescription("Working…");
+    progress.show();
+
     try {
       const pane = window.ZoteroPane || Zotero.getActiveZoteroPane();
-      const items = pane.getSelectedItems().filter((i) => i.isRegularItem());
-      const n = await UnifyNormalizer.normalizeItems(items);
-      await this.fileLog("selected changed=" + n + "/" + items.length);
-      const w = new Zotero.ProgressWindow({ closeOnClick: true });
-      w.changeHeadline("Unify");
-      w.addDescription("Updated " + n + " / " + items.length);
-      w.show();
-      w.startCloseTimer(2500);
+      const selected = pane.getSelectedItems() || [];
+      if (!selected.length) {
+        progress.changeHeadline("Unify");
+        progress.addDescription("No items selected");
+        progress.startCloseTimer(2000);
+        return;
+      }
+
+      const Recognize = Zotero.RecognizeDocument || Zotero.RecognizePDF;
+      let recognizedParents = [];
+
+      if (Recognize && typeof Recognize.recognizeItems === "function") {
+        const docs = await this._prepareAttachmentsForRecognize(selected);
+        await this.fileLog("recognize candidates=" + docs.length);
+
+        if (docs.length) {
+          try {
+            const queue = Zotero.ProgressQueues && Zotero.ProgressQueues.get("recognize");
+            if (queue && queue.getDialog) {
+              const dialog = queue.getDialog();
+              if (dialog && dialog.open) dialog.open();
+            }
+          } catch (e) {}
+
+          await Recognize.recognizeItems(docs);
+          // Collect resulting parents (recognize attaches PDF under new parent)
+          for (const doc of docs) {
+            const fresh = Zotero.Items.get(doc.id);
+            if (!fresh) continue;
+            const parent = fresh.parentItem;
+            if (parent) recognizedParents.push(parent);
+            else if (fresh.isRegularItem && fresh.isRegularItem()) {
+              recognizedParents.push(fresh);
+            }
+          }
+        }
+      } else {
+        await this.fileLog("RecognizeDocument API missing");
+      }
+
+      // Also normalize any still-selected regular items (and new parents)
+      const toNormalize = new Map();
+      for (const it of recognizedParents) {
+        if (it && it.isRegularItem && it.isRegularItem()) toNormalize.set(it.id, it);
+      }
+      for (const it of selected) {
+        const cur = Zotero.Items.get(it.id) || it;
+        if (!cur) continue;
+        if (cur.isRegularItem && cur.isRegularItem()) {
+          toNormalize.set(cur.id, cur);
+        } else if (cur.isAttachment && cur.isAttachment() && cur.parentItem) {
+          toNormalize.set(cur.parentItem.id, cur.parentItem);
+        }
+      }
+
+      const list = Array.from(toNormalize.values());
+      const n = await UnifyNormalizer.normalizeItems(list);
+      await this.fileLog(
+        "Unify done recognizeParents=" +
+          recognizedParents.length +
+          " normalized=" +
+          n +
+          "/" +
+          list.length
+      );
+
+      try {
+        if (pane.itemsView && pane.itemsView.refreshAndMaintainSelection) {
+          await pane.itemsView.refreshAndMaintainSelection();
+        }
+      } catch (e) {}
+
+      progress.changeHeadline("Unify");
+      progress.addDescription("Recognized " + recognizedParents.length);
+      progress.startCloseTimer(2500);
     } catch (e) {
-      await this.fileLog("normalizeSelected: " + e);
+      await this.fileLog("runUnifyOnSelected: " + e + "\n" + (e && e.stack));
+      progress.changeHeadline("Unify");
+      progress.addDescription("Error: " + e);
+      progress.startCloseTimer(4000);
+    } finally {
+      this._processing = false;
     }
   },
 
@@ -153,13 +331,20 @@ var Unify = {
         const el = win.document.getElementById(id);
         if (el) el.remove();
       }
+      // Also strip legacy ids if still present
+      for (const legacy of ["unify-normalize-selected", "unify-normalize-library"]) {
+        const el = win.document.getElementById(legacy);
+        if (el) el.remove();
+      }
     }
     this._addedElementIDs = [];
   },
 
   onNotify(event, type, ids) {
     if (type !== "item") return;
-    if (event !== "add" && event !== "modify") return;
+    // Only react to new items/attachments. Listening to "modify" re-applies venue
+    // fields after the user clears or edits them (looks like metadata can't be changed).
+    if (event !== "add") return;
     for (const id of ids) this._queue.add(id);
     if (this._timer) clearTimeout(this._timer);
     this._timer = setTimeout(() => this.flushQueue(), 1500);
@@ -178,7 +363,6 @@ var Unify = {
       for (const id of ids) {
         const item = Zotero.Items.get(id);
         if (!item) continue;
-        // Attachment notify -> normalize parent only (never create parent / invent title)
         if (item.isAttachment()) {
           const parent = item.parentItem;
           if (parent) map.set(parent.id, parent);

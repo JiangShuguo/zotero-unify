@@ -22,11 +22,13 @@ var UnifyNormalizer = {
     if (!venue) return false;
     const name = venue.name;
     if (venue.kind === "conference") {
+      const conf = (item.getField("conferenceName") || "").trim();
+      const proc = (item.getField("proceedingsTitle") || "").trim();
+      // Respect intentionally empty venue fields (do not refill from URL/DOI alone).
+      // Empty → leave for USENIX/PDF enrich on import, or for the user.
+      if (!conf && !proc) return false;
       if (item.itemType === "conferencePaper") {
-        return (
-          (item.getField("conferenceName") || "") !== name ||
-          (item.getField("proceedingsTitle") || "") !== name
-        );
+        return conf !== name || proc !== name;
       }
       return ["journalArticle", "document", "preprint", "report"].includes(
         item.itemType
@@ -85,7 +87,14 @@ var UnifyNormalizer = {
     return this.saveWithRetry(item);
   },
 
-  async normalizeItem(item) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.fillEmpty=true] When true, empty venue fields may be
+   *   filled from USENIX/PDF heuristics (for new imports / manual Unify).
+   */
+  async normalizeItem(item, opts) {
+    opts = opts || {};
+    const fillEmpty = opts.fillEmpty !== false;
     if (!item || !item.isRegularItem || !item.isRegularItem()) return false;
 
     // 1) Shorten/normalize from existing venue metadata only
@@ -98,6 +107,7 @@ var UnifyNormalizer = {
     }
 
     // 2) Empty venue fields: USENIX / PDF header for venue map only
+    if (!fillEmpty) return false;
     const conf = (item.getField("conferenceName") || "").trim();
     const proc = (item.getField("proceedingsTitle") || "").trim();
     const pub = (item.getField("publicationTitle") || "").trim();
@@ -121,11 +131,11 @@ var UnifyNormalizer = {
     return false;
   },
 
-  async normalizeItems(items) {
+  async normalizeItems(items, opts) {
     let n = 0;
     for (const item of items) {
       try {
-        if (await this.normalizeItem(item)) n++;
+        if (await this.normalizeItem(item, opts)) n++;
       } catch (e) {
         Zotero.debug("Unify normalize error: " + e);
       }
@@ -134,12 +144,12 @@ var UnifyNormalizer = {
   },
 
   async fixStaleVenues() {
-    // Only regular items. Never create parents / rewrite titles from orphan PDFs.
+    // Shorten long names only; never refill emptied venue fields.
     const top = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID, true)) || [];
     const items = [];
     for (const it of top) {
       if (it && it.isRegularItem && it.isRegularItem()) items.push(it);
     }
-    return this.normalizeItems(items);
+    return this.normalizeItems(items, { fillEmpty: false });
   },
 };
