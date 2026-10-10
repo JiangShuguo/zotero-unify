@@ -14,6 +14,7 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
     } catch (e) {}
 
     Services.scriptloader.loadSubScript(rootURI + "venue-map.js");
+    Services.scriptloader.loadSubScript(rootURI + "crossref.js");
     Services.scriptloader.loadSubScript(rootURI + "usenix.js");
     Services.scriptloader.loadSubScript(rootURI + "normalizer.js");
     Services.scriptloader.loadSubScript(rootURI + "unify.js");

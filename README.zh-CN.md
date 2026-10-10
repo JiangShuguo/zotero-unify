@@ -8,7 +8,7 @@ CCF 等分区标签仍由 Ethereal Style 生成与显示，Unify 不写入这些
 
 | 项目 | 说明 |
 | --- | --- |
-| 版本 | 1.2.0 |
+| 版本 | 1.3.0 |
 | 作者 | jsg |
 | 兼容 | Zotero 7.x – 10.* |
 | 许可证 | MIT |
@@ -35,24 +35,31 @@ Unify 处理上述第 2、3 点；第 1 点与标签展示仍由 Style 负责。
 
 | | |
 | --- | --- |
-| 可能修改 | `conferenceName`、`proceedingsTitle`；期刊 `publicationTitle`（已有名称命中已知会场时）；必要时将条目类型设为 `conferencePaper` |
-| 不修改 | 标题、作者、日期、DOI、URL、摘要及其他非会场字段 |
+| 可能修改 | `conferenceName`、`proceedingsTitle`；期刊 `publicationTitle`（已有名称命中已知会场时）；必要时将条目类型设为 `conferencePaper`。会场字段皆空时，也可经 Crossref 填写空的 `DOI` / `date` / `url` |
+| 不修改 | 标题、作者、摘要等正文相关字段；已有非空的 DOI/会场/日期/URL 不会被覆盖 |
 | 触发时机 | 新条目加入（`add` 通知）；选中条目后右键 **Unify** |
 | 未命中映射 | 保持原字段不变 |
 
+### 空会场补全顺序
+
+当 `conferenceName` / `proceedingsTitle` / `publicationTitle` 均为空时：
+
+1. 本地 USENIX 线索（题名 / URL / 文件名）
+2. Crossref 题名检索（仅高置信度题名匹配）
+3. 单次读取 PDF 文本（USENIX 封面或其他已映射会议）
+
 ### USENIX 会场字段
 
-对 USENIX 论文，可根据封面页文本填写 `conferenceName` / `proceedingsTitle`；若 `publisher` 为空，可填 `USENIX Association`。
+对 USENIX 论文，可根据本地线索或封面页文本填写 `conferenceName` / `proceedingsTitle`；若 `publisher` 为空，可填 `USENIX Association`。
 
-依赖 PDF 含有 **USENIX 官方封面页**（协会标识、题名作者、论文链接，以及类似 “This paper is included in the Proceedings of the 35th USENIX Security Symposium” 的会场说明）。仅有正文首页、封面文本无法抽取时，通常无法补全。建议从 [USENIX](https://www.usenix.org/) 论文页下载官方 PDF。
+依赖 PDF 含有 **USENIX 官方封面页**（协会标识、题名作者、论文链接，以及类似 “This paper is included in the Proceedings of the 35th USENIX Security Symposium” 的会场说明）。仅有正文首页、封面文本无法抽取时，通常无法仅靠 PDF 补全。建议从 [USENIX](https://www.usenix.org/) 论文页下载官方 PDF。
 
 ### 右键菜单：Unify
 
 对选中的一个或多个条目依次：
 
 1. 按 Zotero 原生流程重新识别 PDF/文档元数据；
-2. 规范会场/期刊名称；
-3. 若识别后仍是缺少会场字段的 USENIX PDF，再按封面页逻辑补全。
+2. 规范会场/期刊名称（含上述空会场补全）。
 
 ---
 
@@ -121,7 +128,7 @@ python unify/tools/inspect_and_build.py
 unify/
   bootstrap.js                   插件入口
   manifest.json
-  src/                           venue-map、normalizer、usenix、unify
+  src/                           venue-map、crossref、normalizer、usenix、unify
   tools/inspect_and_build.py     打包 XPI
   tools/validate_aliases.py      用 easyscholar 校验规范名
   JOURNAL_ALIASES.txt            Style Journal Aliases

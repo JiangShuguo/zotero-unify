@@ -1,8 +1,8 @@
 /**
  * Venue-field normalizer for Ethereal Style tags.
- * ONLY may change: conferenceName, proceedingsTitle, publicationTitle (journals),
- * and itemType when converting to conferencePaper.
- * Never touches title, creators, date, url, DOI, abstract, extra, tags, attachments.
+ * May change: conferenceName, proceedingsTitle, publicationTitle (journals),
+ * itemType when converting to conferencePaper; sparse Crossref fill may also
+ * set empty DOI / date / url (never title or creators).
  */
 var UnifyNormalizer = {
   detectFromFields(item) {
@@ -24,8 +24,7 @@ var UnifyNormalizer = {
     if (venue.kind === "conference") {
       const conf = (item.getField("conferenceName") || "").trim();
       const proc = (item.getField("proceedingsTitle") || "").trim();
-      // Respect intentionally empty venue fields (do not refill from URL/DOI alone).
-      // Empty → leave for USENIX/PDF enrich on import, or for the user.
+      // Empty conference fields: do not refill from URL/DOI alone.
       if (!conf && !proc) return false;
       if (item.itemType === "conferencePaper") {
         return conf !== name || proc !== name;
@@ -76,7 +75,6 @@ var UnifyNormalizer = {
       }
     } else if (venue.kind === "journal" && item.itemType === "journalArticle") {
       const cur = (item.getField("publicationTitle") || "").trim();
-      // Shorten long names, or fill empty when DOI/URL already identifies the journal
       if (cur !== name) {
         item.setField("publicationTitle", name);
         dirty = true;
@@ -88,45 +86,72 @@ var UnifyNormalizer = {
   },
 
   /**
+   * After Crossref/USENIX/PDF fill, map to canonical Style lookup names.
+   */
+  async _canonicalizeIfMapped(item) {
+    const venue = this.detectFromFields(item);
+    if (!venue) return false;
+    // After an explicit fill, write canonical even if conference fields were empty.
+    return this.applyVenue(item, venue);
+  },
+
+  /**
    * @param {object} [opts]
    * @param {boolean} [opts.fillEmpty=true] When true, empty venue fields may be
-   *   filled from USENIX/PDF heuristics (for new imports / manual Unify).
+   *   filled from Crossref / USENIX / PDF (new imports / manual Unify).
    */
   async normalizeItem(item, opts) {
     opts = opts || {};
     const fillEmpty = opts.fillEmpty !== false;
     if (!item || !item.isRegularItem || !item.isRegularItem()) return false;
 
-    // 1) Shorten/normalize from existing venue metadata only
-    let venue = this.detectFromFields(item);
-    if (venue && this.needsShortening(item, venue)) {
-      if (await this.applyVenue(item, venue)) return true;
-    }
-    if (venue && !this.needsShortening(item, venue)) {
+    // 1) Shorten / normalize from existing field metadata (incl. URL/DOI)
+    const venue = this.detectFromFields(item);
+    if (venue) {
+      if (this.needsShortening(item, venue)) {
+        return this.applyVenue(item, venue);
+      }
       return false;
     }
 
-    // 2) Empty venue fields: USENIX / PDF header for venue map only
-    if (!fillEmpty) return false;
+    // 2) No mapped venue from fields — stop unless empty-fill is allowed
     const conf = (item.getField("conferenceName") || "").trim();
     const proc = (item.getField("proceedingsTitle") || "").trim();
     const pub = (item.getField("publicationTitle") || "").trim();
-    if (conf || proc || pub) {
-      return false;
-    }
+    if (conf || proc || pub) return false;
+    if (!fillEmpty) return false;
 
+    // 3) Empty venue fields:
+    //    local USENIX (URL/filename) → Crossref → one PDF read (USENIX or conference)
     try {
-      if (await UnifyUsenix.enrich(item)) return true;
-      const pdf = await UnifyUsenix.getPdfText(item, UnifyUsenix.HEADER_CHARS || 3500);
+      if (typeof UnifyUsenix !== "undefined" && (await UnifyUsenix.enrichLocal(item))) {
+        return true;
+      }
+      if (
+        typeof UnifyCrossref !== "undefined" &&
+        (await UnifyCrossref.enrichSparse(item))
+      ) {
+        await this._canonicalizeIfMapped(item);
+        return true;
+      }
+      const pdf =
+        typeof UnifyUsenix !== "undefined"
+          ? await UnifyUsenix.getPdfText(item, UnifyUsenix.HEADER_CHARS || 3500)
+          : "";
       if (pdf) {
-        venue = UnifyVenueMap.resolve(pdf);
-        // Only apply conference venues from PDF; do not invent journal titles
-        if (venue && venue.kind === "conference") {
-          return this.applyVenue(item, venue);
+        const fromPdf = UnifyVenueMap.resolve(pdf);
+        if (fromPdf && fromPdf.kind === "conference") {
+          if (
+            typeof UnifyUsenix !== "undefined" &&
+            UnifyUsenix.isUsenixVenue(fromPdf)
+          ) {
+            return UnifyUsenix.applyCanonical(item, fromPdf.name);
+          }
+          return this.applyVenue(item, fromPdf);
         }
       }
     } catch (e) {
-      Zotero.debug("Unify normalize PDF: " + e);
+      Zotero.debug("Unify normalize fillEmpty: " + e);
     }
     return false;
   },
@@ -141,15 +166,5 @@ var UnifyNormalizer = {
       }
     }
     return n;
-  },
-
-  async fixStaleVenues() {
-    // Shorten long names only; never refill emptied venue fields.
-    const top = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID, true)) || [];
-    const items = [];
-    for (const it of top) {
-      if (it && it.isRegularItem && it.isRegularItem()) items.push(it);
-    }
-    return this.normalizeItems(items, { fillEmpty: false });
   },
 };

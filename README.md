@@ -8,7 +8,7 @@ Unify does not write CCF or other ranking labels; those come from Ethereal Style
 
 | | |
 | --- | --- |
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Author | jsg |
 | Compatible with | Zotero 7.x – 10.* |
 | License | MIT |
@@ -35,24 +35,31 @@ Maps recognized venue strings to a fixed lookup name used by Style / easyscholar
 
 | | |
 | --- | --- |
-| May change | `conferenceName`, `proceedingsTitle`; journal `publicationTitle` when an existing name matches a known venue; item type to `conferencePaper` when required for conference papers |
-| Does not change | Title, creators, date, DOI, URL, abstract, and other non-venue fields |
+| May change | `conferenceName`, `proceedingsTitle`; journal `publicationTitle` when an existing name matches a known venue; item type to `conferencePaper` when required. If venue fields are empty, may also fill empty `DOI` / `date` / `url` via Crossref |
+| Does not change | Title, creators, abstract, and other non-venue content; non-empty DOI/venue/date/url are not overwritten |
 | Runs on | New items (`add` notifier); selected items via the **Unify** context menu |
 | No match | Fields are left as they are |
 
+### Empty-venue fill order
+
+When `conferenceName` / `proceedingsTitle` / `publicationTitle` are all empty:
+
+1. Local USENIX hints (title / URL / filename)
+2. Crossref title lookup (high-confidence title match only)
+3. One PDF text pass (USENIX cover or other mapped conference)
+
 ### USENIX venue fields
 
-For USENIX papers, Unify can set `conferenceName` / `proceedingsTitle` from cover-page text, and set `publisher` to `USENIX Association` when that field is empty.
+For USENIX papers, Unify can set `conferenceName` / `proceedingsTitle` from local clues or cover-page text, and set `publisher` to `USENIX Association` when that field is empty.
 
-Works reliably when the PDF includes the **official USENIX cover page** (association mark, title/authors, paper URL, and a venue line such as “This paper is included in the Proceedings of the 35th USENIX Security Symposium”). Body-only PDFs without extractable cover text usually cannot be enriched this way. Prefer the official PDF from the [USENIX](https://www.usenix.org/) paper page.
+Works reliably when the PDF includes the **official USENIX cover page** (association mark, title/authors, paper URL, and a venue line such as “This paper is included in the Proceedings of the 35th USENIX Security Symposium”). Body-only PDFs without extractable cover text usually cannot be enriched from PDF text alone. Prefer the official PDF from the [USENIX](https://www.usenix.org/) paper page.
 
 ### Context menu: Unify
 
 On one or more selected items:
 
 1. Re-run Zotero’s native PDF/document recognition.
-2. Normalize venue / journal names.
-3. If recognition still leaves a USENIX PDF without venue fields, apply cover-page enrich.
+2. Normalize venue / journal names (including empty-venue fill above).
 
 ---
 
@@ -121,7 +128,7 @@ Requires Python 3.8+. Output: `unify/build/unify.xpi`.
 unify/
   bootstrap.js                   plugin entry
   manifest.json
-  src/                           venue-map, normalizer, usenix, unify
+  src/                           venue-map, crossref, normalizer, usenix, unify
   tools/inspect_and_build.py     build XPI
   tools/validate_aliases.py      check Style names against easyscholar
   JOURNAL_ALIASES.txt            Style Journal Aliases

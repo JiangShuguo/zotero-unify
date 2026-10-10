@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "build" / "unify.xpi"
 ADDON_ID = "unify@jsg.local"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 HOMEPAGE = "https://github.com/JiangShuguo/zotero-unify"
 UPDATE_URL = (
     "https://raw.githubusercontent.com/JiangShuguo/zotero-unify/main/unify/updates.json"
@@ -101,13 +101,14 @@ def build():
         "icon@2x.png": (ROOT / "icon@2x.png").read_bytes(),
         "JOURNAL_ALIASES.txt": (ROOT / "JOURNAL_ALIASES.txt").read_bytes(),
         "venue-map.js": (ROOT / "src" / "venue-map.js").read_bytes(),
+        "crossref.js": (ROOT / "src" / "crossref.js").read_bytes(),
         "usenix.js": (ROOT / "src" / "usenix.js").read_bytes(),
         "normalizer.js": (ROOT / "src" / "normalizer.js").read_bytes(),
         "unify.js": (ROOT / "src" / "unify.js").read_bytes(),
     }
 
     (ROOT / "manifest.json").write_bytes(files["manifest.json"])
-    for name in ("venue-map.js", "usenix.js", "normalizer.js", "unify.js"):
+    for name in ("venue-map.js", "crossref.js", "usenix.js", "normalizer.js", "unify.js"):
         (ROOT / name).write_bytes(files[name])
 
     if OUT.exists():

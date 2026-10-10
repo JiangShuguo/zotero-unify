@@ -3,8 +3,8 @@
     "unify@jsg.local": {
       "updates": [
         {
-          "version": "1.2.0",
-          "update_link": "https://github.com/JiangShuguo/zotero-unify/releases/download/v1.2.0/unify.xpi",
+          "version": "1.3.0",
+          "update_link": "https://github.com/JiangShuguo/zotero-unify/releases/download/v1.3.0/unify.xpi",
           "applications": {
             "zotero": {
               "strict_min_version": "6.999",
