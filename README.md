@@ -6,7 +6,6 @@ A [Zotero](https://www.zotero.org/) plugin that works with [Ethereal Style](http
 
 | | |
 | --- | --- |
-| Addon ID | `unify@jsg.local` |
 | Version | 1.1.0 |
 | Author | jsg |
 | Compatible with | Zotero 7.x – 10.* |
