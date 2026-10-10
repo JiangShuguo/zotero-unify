@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Unify",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Normalize venue names for publication tags and enrich USENIX metadata.",
   "homepage_url": "https://github.com/JiangShuguo/zotero-unify",
   "author": "jsg",
